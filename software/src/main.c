@@ -6,9 +6,14 @@
 #include <io.h>
 #include <delay.h>
 
+//#define sa PORTB.0
+//#define sb PORTB.1
+//#define sc PORTB.2
+//#define sd PORTB.3
+
 #define sa PORTB.0
-#define sb PORTB.1
-#define sc PORTB.2
+#define sb PORTB.2
+#define sc PORTB.1
 #define sd PORTB.3
 
 #define clk PORTD.5
@@ -112,18 +117,26 @@ void BordInit()
   DDRB |= 0b00111111;
   DDRD |= 0b11111101;
   DDRC |= 0xFF;
-  //PORTC= 0xff;
-      
+#define A128
+
+#ifdef A128    
+  UCSR0B |= (1 << TXEN0) ;
+  UBRR0L=103;
+  TCCR0 |= (1<<CS02) |(1<<CS00);
+  TCCR2 |= (1<<CS22) |(1<<CS20);
+  TCNT2=239; // 16M/1024/(256-16) = 1msec
+#else
   UCSRB |= (1 << TXEN) ;
   UBRRL=51;
-   
+
   TCCR0 |= (1<<CS02)  ;
   TCNT0=104;
   
-  TCCR2 |= (1<<CS22)  ;
-  TCNT2=0x83;
+  TCCR2 |= (1<<CS22);
+  TCNT2=131;
+#endif
 
-  TIMSK= (1<<TOIE2) | (1<<TOIE0);     
+  TIMSK = (1<<TOIE2) | (1<<TOIE0);     
 #asm("sei")
 }
 void drvFnd()
@@ -202,23 +215,26 @@ void drvLed()
 }
 interrupt [TIM0_OVF] void timer0_ovf_isr(void)
 {
-  TCNT0=104;
+  //TCNT0=104;
   drvLed();
   drvFnd();
 }
 interrupt [TIM2_OVF] void timer2_ovf_isr(void)
 {
-  TCNT2=0x83;
+  //TCNT2=0x83;
+  TCNT2=239;
   t2Counter++;
 }
 EState initPb1Pressed(EState s, EEvent e)
 {
   uint16_t tCount = t2Counter;
-  assert(s == INIT && e == PB1_PRESSED);
+  assert(s == INIT || s == SINGLE || s == COMPLEX || s == PRELIMINARY
+	 && e == PB1_PRESSED);
   printf("initPb1pressed\r\n");
   do
     {                                      
       if (t2Counter-tCount>3000) {
+	printf("pb1 is pressed more than 3 sec!!\r\n");
 	dcmState.speed = DCM_FAST;
 	dcmState.cmd = RUN_DCM_CCW;
 	dcmState.bUpdateCmd = 1;
@@ -252,19 +268,19 @@ EState chkSen2Sen2Detected(EState s, EEvent e)
 EState singlePb2Pressed(EState s, EEvent e)
 {
   assert(s == SINGLE && e == PB2_PRESSED);
-  printf("chksen2sen2detected\r\n");
+  printf("singlepb2pressed\r\n");
   return COMPLEX;
 }
 EState complexPb2Pressed(EState s, EEvent e)
 {
   assert(s == COMPLEX && e == PB2_PRESSED);
-  printf("chksen2sen2detected\r\n");
+  printf("complexpb2pressed\r\n");
   return PRELIMINARY;
 }
 EState prelimPb2Pressed (EState s, EEvent e)
 {
   assert(s == PRELIMINARY && e == PB2_PRESSED);
-  printf("chksen2sen2detected\r\n");
+  printf("prelimpb2pressed\r\n");
   return SINGLE;
 }
 EState singlEnswPressed (EState s, EEvent e)
@@ -322,16 +338,17 @@ EState settingEnswPressed (EState s, EEvent e)
     } while (!ensw);
   return s;
 }
+char *cState[] = {"INIT", "CHK_SEN1", "CHK_SEN2", "SINGLE", "COMPLEX","PRELIMIN", "SETTING"};
 evtHandler transitions[MAX_STATES][ MAX_EVENTS] =
   {
    /*             PB11_PRESSED    SE1_DETECTED  SE2_DETECTED     PB2_PRESSED      ENSW_PRESSED*/
    /*[INIT ]*/    {initPb1Pressed  },
-   /*[CHK_SEN1]*/ {(evtHandler)0, chkSen1Sen1Detected },
-   /*[CHK_SEN2]*/ {(evtHandler)0, (evtHandler)0, chkSen2Sen2Detected },
-   /*[SINGLE]*/   {(evtHandler)0, (evtHandler)0, (evtHandler)0, singlePb2Pressed , singlEnswPressed   },
-   /*[COMPLEX]*/  {(evtHandler)0, (evtHandler)0, (evtHandler)0, complexPb2Pressed, complexEnswPressed },
-   /*[PRELIMIN]*/ {(evtHandler)0, (evtHandler)0, (evtHandler)0, prelimPb2Pressed , prelimEnswPressed  },
-   /*[SETTING]*/  {(evtHandler)0, (evtHandler)0, (evtHandler)0, prelimPb2Pressed , settingEnswPressed }
+   /*[CHK_SEN1]*/ {(evtHandler)0,  chkSen1Sen1Detected },
+   /*[CHK_SEN2]*/ {(evtHandler)0,  (evtHandler)0, chkSen2Sen2Detected },
+   /*[SINGLE]*/   {initPb1Pressed, (evtHandler)0, (evtHandler)0, singlePb2Pressed , singlEnswPressed   },
+   /*[COMPLEX]*/  {initPb1Pressed, (evtHandler)0, (evtHandler)0, complexPb2Pressed, complexEnswPressed },
+   /*[PRELIMIN]*/ {initPb1Pressed, (evtHandler)0, (evtHandler)0, prelimPb2Pressed , prelimEnswPressed  },
+   /*[SETTING]*/  {(evtHandler)0,  (evtHandler)0, (evtHandler)0, prelimPb2Pressed , settingEnswPressed }
   };
 void step_state(EEvent event)
 {
@@ -364,6 +381,7 @@ void RunStm(EMotDir dir)
 }
 void main(void)
 {
+  uint16_t ledCounter, ledCounterLast = 0;
   uint16_t led19Counter, led19CounterLast = 0;
   uint16_t dcmCounter, dcmCounterLast = 0, dcmPwmCounter=0;
   uint16_t stmCounter, stmCounterLast = 0;
@@ -373,7 +391,9 @@ void main(void)
   bool mAState, mAlastState;//, mSen1, mSen2; 
 
   //  dcmState = {DCM_SLOW, STOP_DCM, false};
+
   BordInit();
+  BZ = 1;
 
   while (1) {
     // dc motor control
@@ -414,8 +434,15 @@ void main(void)
       }
     }
 
+    ledCounter = stmCounter   = led19Counter = sen1Counter  = sen2Counter  = t2Counter;
+
+    //is the board alive?
+    if (ledCounter - ledCounterLast>500) {
+      PORTA ^= 1;
+      ledCounterLast = ledCounter;
+    }
+
     // stepper motor control
-    stmCounter   = led19Counter = sen1Counter  = sen2Counter  = t2Counter;
     if (stmCounter - stmCounterLast>15) {
       switch (stmCmd) {
       case RUN_STM_CW:  { led[20-1] = 1;  RunStm(CW); break;}
@@ -450,13 +477,16 @@ void main(void)
     }
     //pb1
     if (isBtnPressed(0, PINA, 1, 500)) {
-      printf("state: %d\r\n", state);
-      if (state == INIT) {
-	step_state(PB1_PRESSED);
-      }
+      printf("state: %s\r\n", cState[state]);
+      printf("pb1 pressed\r\n");
+      step_state(PB1_PRESSED);
+      //if (state == INIT) {
+      //	step_state(PB1_PRESSED);
+      //}
     }
     // pb2
     if (isBtnPressed(1, PINA, 2, 500)) {
+      printf("state: %s\r\n", cState[state]);
       printf("pb2 pressed\r\n");
       switch (state) {
       case SINGLE: {step_state(PB2_PRESSED); break;}
@@ -467,23 +497,25 @@ void main(void)
     }
     //pb3
     if (isBtnPressed(2, PINA, 3, 500)) {
-      printf("state: %d\r\n", state);
-      if (state == INIT) {step_state(PB1_PRESSED);
-      }
+      printf("state: %s\r\n", cState[state]);
+      printf("pb3 pressed\r\n");
+      //if (state == INIT) {step_state(PB1_PRESSED);}
     }
     //pb4
     if (isBtnPressed(3, PINA, 4, 500)) {
-      printf("state: %p\r\n", state);
-      if (state == INIT) {
-	step_state(PB1_PRESSED);
-      }
+      printf("pb4 pressed\r\n");
+      printf("state: %x\r\n", state);
+      //if (state == INIT) {
+      //	step_state(PB1_PRESSED);
+      //}
     }
     // Encoder Switch
     if (isBtnPressed(4, PINA, 7, 500)) {
-      printf("state: %p\r\n", state);
-      if (state == INIT) {
-	step_state(ENSW_PRESSED);
-      }
+      printf("state: %x\r\n", state);
+      printf("ensw pressed\r\n");
+      //if (state == INIT) {
+      //	step_state(ENSW_PRESSED);
+      //}
     }
     //------------- rotary encoder spin event process
     mAState = ena;
