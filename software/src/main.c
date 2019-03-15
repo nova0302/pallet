@@ -93,6 +93,10 @@ char bit_is_clear(char pinPort, char portBit)
 {
   return !((pinPort>>portBit) & 0x01);
 }
+char bit_is_set(char pinPort, char portBit)
+{
+  return ((pinPort>>portBit) & 0x01);
+}
 char isBtnPressed(int index,unsigned char pinPort,unsigned char Bitport,int numCount)
 {
   //if (/*bit_is_clear(pinPort,portBit)*/1){
@@ -108,6 +112,27 @@ char isBtnPressed(int index,unsigned char pinPort,unsigned char Bitport,int numC
   else{
     btnPressed[index]= 0;
     btnCounter[index]=0;
+  }
+  return 0;
+}
+#define numActiveHighBtn 1
+char btnReleased[numActiveHighBtn];
+int btnCnt[numActiveHighBtn];
+char isBtnReleased(int index,unsigned char pinPort,unsigned char Bitport,int numCount)
+{
+  //if (/*bit_is_clear(pinPort,portBit)*/1){
+  if (bit_is_set(pinPort,Bitport)){
+    if (btnCnt[index]++> numCount){
+      if (!btnReleased[index]){
+	btnReleased[index]=1;
+	return 1;
+      }
+      btnCnt[index]=0;
+    }
+  }
+  else{
+    btnReleased[index]= 0;
+    btnCnt[index]=0;
   }
   return 0;
 }
@@ -512,8 +537,17 @@ void main(void)
       //	step_state(PB1_PRESSED);
       //}
     }
-    // Encoder Switch
+    // Encoder Switch Pressed
     if (isBtnPressed(4, PINA, 7, 500)) {
+      printf("state: %x\r\n", state);
+      printf("ensw pressed\r\n");
+      step_state(ENSW_PRESSED);
+      //if (state == INIT) {
+      //	step_state(ENSW_PRESSED);
+      //}
+    }
+    // Encoder Switch Released
+    if (isBtnReleased(4, PINA, 7, 500)) {
       printf("state: %x\r\n", state);
       printf("ensw pressed\r\n");
       step_state(ENSW_PRESSED);
