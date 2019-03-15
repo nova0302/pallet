@@ -291,6 +291,7 @@ EState singlEnswPressed (EState s, EEvent e)
   do
     {                                      
       if (t2Counter-tCount>3000) {
+	printf("ensw pressed more than 3 sed\r\n");
 	lastState = s;
 	return SETTING;
       }
@@ -305,6 +306,7 @@ EState complexEnswPressed (EState s, EEvent e)
   do
     {                                      
       if (t2Counter-tCount>3000) {
+	printf("ensw pressed more than 3 sed\r\n");
 	lastState = s;
 	return SETTING;
       }
@@ -319,6 +321,7 @@ EState prelimEnswPressed (EState s, EEvent e)
   do
     {                                      
       if (t2Counter-tCount>3000) {
+	printf("ensw pressed more than 3 sed\r\n");
 	lastState = s;
 	return SETTING;
       }
@@ -513,6 +516,7 @@ void main(void)
     if (isBtnPressed(4, PINA, 7, 500)) {
       printf("state: %x\r\n", state);
       printf("ensw pressed\r\n");
+      step_state(ENSW_PRESSED);
       //if (state == INIT) {
       //	step_state(ENSW_PRESSED);
       //}
